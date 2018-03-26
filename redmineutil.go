@@ -31,7 +31,7 @@ func GetIssues(key string, user string, limit int) (ret []Issue, retErr error) {
 	}
 
 	if userId == -1 {
-		et := fmt.Sprintf("redmine.GetIssues -   Couldn't find a user record for \"%s\".", user)
+		et := fmt.Sprintf("redmineutil.GetIssues -   Couldn't find a user record for \"%s\".", user)
 		log.Printf(et)
 		return nil, errors.New(et)
 	}
@@ -58,16 +58,9 @@ func GetIssues(key string, user string, limit int) (ret []Issue, retErr error) {
 	var issuesCollection RedmineIssuesCollection
 	json.NewDecoder(resp.Body).Decode(&issuesCollection)
 
-	log.Printf("redmineutil.GetIssues -   Got %d total issue records...", len(issuesCollection.Issues))
-	for _, issue := range issuesCollection.Issues {
-		if issue.AssignedTo.ID == userId {
-			ret = append(ret, issue)
-		}
-	}
+	log.Printf("redmineutil.GetIssues -   Got %d issue records...", len(issuesCollection.Issues))
 
-	log.Printf("redmineutil.GetIssues -   Pruned the list of issue records down to %d...", len(ret))
-
-	return ret, nil
+	return issuesCollection.Issues, nil
 }
 
 func GetUsers(client *http.Client, key string) {

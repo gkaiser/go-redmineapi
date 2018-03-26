@@ -20,7 +20,7 @@ func HandleMessage(msg string, userFirstName string, key string) (resp string) {
 			return fmt.Sprintf("Welllll crud, we hit a snag: %s", err.Error())
 		}
 
-		resp := fmt.Sprintf("I found %d issues assigned to you, %s:\n", len(issues), userFirstName)
+		resp := fmt.Sprintf("I found %d recent issues assigned to you, %s:\n", len(issues), userFirstName)
 		for _, issue := range issues {
 			resp += fmt.Sprintf("<https://vault.softwaresysinc.net/redmine/issues/%d|Issue #%d> - %s \n", issue.ID, issue.ID, issue.Subject)
 		}

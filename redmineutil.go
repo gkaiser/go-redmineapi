@@ -6,18 +6,37 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strings"
 )
 
 var usersCollection RedmineUsersCollection
 
-// GetIssues returns issues for a given Redmine user
-func GetIssues(key string, user string, limit int) (ret []Issue, retErr error) {
+// HandleMessage handles a message from the SSI bot
+func HandleMessage(msg string, userFirstName string, key string) (resp string) {
+	if strings.Contains(msg, "get") || strings.Contains(msg, "show") {
+		issues, err := getIssues(key, userFirstName, -1)
+		if err != nil {
+			return fmt.Sprintf("Welllll crud, we hit a snag: %s", err.Error())
+		}
+
+		resp := fmt.Sprintf("I found %d issues assigned to you, %s:\n", len(issues), userFirstName)
+		for _, issue := range issues {
+			resp += fmt.Sprintf("<https://vault.softwaresysinc.net/redmine/issues/%d|Issue #%d> - %s \n", issue.ID, issue.ID, issue.Subject)
+		}
+
+		return resp
+	}
+
+	return fmt.Sprintf("Hi %s, I didn't understand your instructions", userFirstName)
+}
+
+func getIssues(key string, user string, limit int) (ret []Issue, retErr error) {
 	log.Printf("redmineutil.GetIssues - Getting issues...")
 	client := &http.Client{}
 
 	if usersCollection.TotalCount == int64(0) {
 		log.Printf("redmineutil.GetIssues -   Getting users first...")
-		GetUsers(client, key)
+		getUsers(client, key)
 		log.Printf("redmineutil.GetIssues -   Got %d user records...", len(usersCollection.Users))
 	}
 
@@ -63,7 +82,7 @@ func GetIssues(key string, user string, limit int) (ret []Issue, retErr error) {
 	return issuesCollection.Issues, nil
 }
 
-func GetUsers(client *http.Client, key string) {
+func getUsers(client *http.Client, key string) {
 	req, err := http.NewRequest("GET", "https://vault.softwaresysinc.net/redmine/users.json", nil)
 	if err != nil {
 		et := fmt.Sprintf("redmineutil.GetIssues failed to create a request to get users: %s", err.Error())

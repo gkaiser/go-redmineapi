@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"time"
 )
 
 var usersCollection RedmineUsersCollection
@@ -55,7 +56,8 @@ func getIssues(key string, user string, limit int) (ret []Issue, retErr error) {
 		return nil, errors.New(et)
 	}
 
-	issuesUrl := fmt.Sprintf("https://vault.softwaresysinc.net/redmine/issues.json?assigned_to_id=%d", userId)
+	minDate := time.Now().AddDate(-2, 0, 0).Format("2006-01-02")
+	issuesUrl := fmt.Sprintf("https://vault.softwaresysinc.net/redmine/issues.json?assigned_to_id=%d&created_on=%3E%3D%s", userId, minDate)
 
 	req, err := http.NewRequest("GET", issuesUrl, nil)
 	if err != nil {

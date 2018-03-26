@@ -36,7 +36,7 @@ func GetIssues(key string, user string, limit int) (ret []Issue, retErr error) {
 		return nil, errors.New(et)
 	}
 
-	issuesUrl := fmt.Sprintf("https://vault.softwaresysinc.net/redmine/issues.json?assigned_to_id=%d", userId)
+	issuesUrl := fmt.Sprintf("https://vault.softwaresysinc.net/redmine/issues.json?limit=1000&assigned_to_id=%d", userId)
 
 	req, err := http.NewRequest("GET", issuesUrl, nil)
 	if err != nil {

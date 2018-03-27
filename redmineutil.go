@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -64,7 +65,7 @@ func getIssues(key string, user string, limit int) (ret []Issue, retErr error) {
 		return nil, errors.New(et)
 	}
 
-	minDate := time.Now().AddDate(-2, 0, 0).Format("2006-01-02")
+	minDate := url.QueryEscape(">=" + time.Now().AddDate(-2, 0, 0).Format("2006-01-02"))
 	issuesUrl := fmt.Sprintf("%s/issues.json?assigned_to_id=%d&created_on=%3E%3D%s", BASE_REDMINE_URL, userId, minDate)
 
 	log.Printf("redmineutil.GetIssues -    Redmine URL: %s", issuesUrl)

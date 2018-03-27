@@ -10,6 +10,8 @@ import (
 	"time"
 )
 
+const BASE_REDMINE_URL = "https://vault.softwaresysinc.net/redmine"
+
 var usersCollection RedmineUsersCollection
 
 // HandleMessage handles a message from the SSI bot
@@ -17,12 +19,18 @@ func HandleMessage(msg string, userFirstName string, key string) (resp string) {
 	if strings.Contains(msg, "get") || strings.Contains(msg, "show") {
 		issues, err := getIssues(key, userFirstName, -1)
 		if err != nil {
-			return fmt.Sprintf("Welllll crud, we hit a snag: %s", err.Error())
+			return fmt.Sprintf("Well crud, we hit a snag: %s", err.Error())
 		}
 
-		resp := fmt.Sprintf("I found %d recent issues assigned to you, %s:\n", len(issues), userFirstName)
+		resp := fmt.Sprintf("I found %d open issues assigned to you, %s:\n", len(issues), userFirstName)
 		for _, issue := range issues {
-			resp += fmt.Sprintf("<https://vault.softwaresysinc.net/redmine/issues/%d|Issue #%d> - %s \n", issue.ID, issue.ID, issue.Subject)
+			resp += fmt.Sprintf(
+				"%s <%s/issues/%d|Issue #%d> - %s\n",
+				issue.Project.Name,
+				BASE_REDMINE_URL,
+				issue.ID,
+				issue.ID,
+				issue.Subject)
 		}
 
 		return resp
@@ -57,7 +65,7 @@ func getIssues(key string, user string, limit int) (ret []Issue, retErr error) {
 	}
 
 	minDate := time.Now().AddDate(-2, 0, 0).Format("2006-01-02")
-	issuesUrl := fmt.Sprintf("https://vault.softwaresysinc.net/redmine/issues.json?assigned_to_id=%d&created_on=%3E%3D%s", userId, minDate)
+	issuesUrl := fmt.Sprintf("%s/issues.json?assigned_to_id=%d&created_on=%3E%3D%s", BASE_REDMINE_URL, userId, minDate)
 
 	req, err := http.NewRequest("GET", issuesUrl, nil)
 	if err != nil {

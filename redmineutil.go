@@ -13,12 +13,30 @@ import (
 	"time"
 )
 
-const BASE_REDMINE_URL = "https://vault.softwaresysinc.net/redmine"
+// mysql> select * from issue_statuses;
+// +----+---------------+-----------+----------+--------------------+
+// | id | name          | is_closed | position | default_done_ratio |
+// +----+---------------+-----------+----------+--------------------+
+// |  1 | New           |         0 |        1 |               NULL |
+// |  2 | Assigned      |         0 |        2 |               NULL |
+// |  3 | Ready to Test |         0 |        4 |               NULL |
+// |  5 | Closed        |         1 |        5 |               NULL |
+// |  6 | Rejected      |         1 |        6 |               NULL |
+// |  7 | Feedback      |         0 |        3 |               NULL |
+// +----+---------------+-----------+----------+--------------------+
+
+const BaseRedmineUrl = "https://vault.softwaresysinc.net/redmine"
 
 var usersCollection RedmineUsersCollection
 
 // HandleMessage handles a message from the SSI bot
 func HandleMessage(msg string, userFirstName string, key string) (resp string) {
+	if len(usersCollection.Users) == 0 {
+		log.Printf("redmineutil.GetIssues -   Getting users first...")
+		getUsers(key)
+		log.Printf("redmineutil.GetIssues -   Got %d user records...", len(usersCollection.Users))
+	}
+
 	if strings.Contains(msg, "get") || strings.Contains(msg, "show") {
 		issues, err := getIssues(key, userFirstName, -1)
 		if err != nil {
@@ -30,7 +48,7 @@ func HandleMessage(msg string, userFirstName string, key string) (resp string) {
 			resp += fmt.Sprintf(
 				"%s <%s/issues/%d|Issue #%d> - %s\n",
 				issue.Project.Name,
-				BASE_REDMINE_URL,
+				BaseRedmineUrl,
 				issue.ID,
 				issue.ID,
 				issue.Subject)
@@ -39,6 +57,8 @@ func HandleMessage(msg string, userFirstName string, key string) (resp string) {
 		return resp
 	} else if strings.Contains(msg, "close") || strings.Contains(msg, "reject") {
 		return closeIssue(msg, userFirstName, key)
+	} else if strings.Contains(msg, "ready to test") {
+		return setReadyToTestStatus(msg, userFirstName, key)
 	}
 
 	return fmt.Sprintf("Hi %s, I didn't understand your instructions", userFirstName)
@@ -47,12 +67,6 @@ func HandleMessage(msg string, userFirstName string, key string) (resp string) {
 func getIssues(key string, user string, limit int) (ret []Issue, retErr error) {
 	log.Printf("redmineutil.GetIssues - Getting issues...")
 	client := &http.Client{}
-
-	if usersCollection.TotalCount == int64(0) {
-		log.Printf("redmineutil.GetIssues -   Getting users first...")
-		getUsers(client, key)
-		log.Printf("redmineutil.GetIssues -   Got %d user records...", len(usersCollection.Users))
-	}
 
 	// find the ID for the user we're getting issues for
 	userId := int64(-1)
@@ -70,7 +84,7 @@ func getIssues(key string, user string, limit int) (ret []Issue, retErr error) {
 	}
 
 	minDate := url.QueryEscape(">=" + time.Now().AddDate(-2, 0, 0).Format("2006-01-02"))
-	issuesUrl := fmt.Sprintf("%s/issues.json?assigned_to_id=%d&created_on=%s", BASE_REDMINE_URL, userId, minDate)
+	issuesUrl := fmt.Sprintf("%s/issues.json?assigned_to_id=%d&created_on=%s", BaseRedmineUrl, userId, minDate)
 
 	log.Printf("redmineutil.GetIssues -    Redmine URL: %s", issuesUrl)
 
@@ -116,25 +130,14 @@ func closeIssue(msg string, userFirstName string, key string) string {
 		return "I couldn't figure out what the issue ID was, so I had to give up."
 	}
 
-	log.Printf("redmineutil.closeIssue -   Attempting to close Issue #%d", issId)
+	log.Printf("redmineutil.closeIssue -   Issue #%d is to be closed", issId)
 
-	// mysql> select * from issue_statuses;
-	// +----+---------------+-----------+----------+--------------------+
-	// | id | name          | is_closed | position | default_done_ratio |
-	// +----+---------------+-----------+----------+--------------------+
-	// |  1 | New           |         0 |        1 |               NULL |
-	// |  2 | Assigned      |         0 |        2 |               NULL |
-	// |  3 | Ready to Test |         0 |        4 |               NULL |
-	// |  5 | Closed        |         1 |        5 |               NULL |
-	// |  6 | Rejected      |         1 |        6 |               NULL |
-	// |  7 | Feedback      |         0 |        3 |               NULL |
-	// +----+---------------+-----------+----------+--------------------+
-
-	delUrl := fmt.Sprintf("%s/issues/%d.json", BASE_REDMINE_URL, issId)
+	delUrl := fmt.Sprintf("%s/issues/%d.json", BaseRedmineUrl, issId)
 	rawJson := []byte(fmt.Sprintf("{ \"issue\": { \"status_id\": \"5\", \"notes\": \"Closed by SSI bot on behalf of %s.\" }}", userFirstName))
 
 	req, err := http.NewRequest("PUT", delUrl, bytes.NewBuffer(rawJson))
 	if err != nil {
+		log.Printf("redmineutil.closeIssue -   Failed while creating the PUT request: %s", err.Error())
 		return fmt.Sprintf("I failed while creating the PUT request to update the issue: %s", err.Error())
 	}
 
@@ -149,10 +152,79 @@ func closeIssue(msg string, userFirstName string, key string) string {
 		return fmt.Sprintf("I failed while trying to get a response: %s", err.Error())
 	}
 
+	log.Printf("redmineutil.closeIssue -   Closed issue %d successfully.", issId)
 	return fmt.Sprintf("Alright, I've closed Issue #%d.", issId)
 }
 
-func getUsers(client *http.Client, key string) {
+func setReadyToTestStatus(msg string, userFirstName string, key string) string {
+	log.Printf("redmineutil.setReadyToTestStatus - Attempting to mark an issue as ready to test")
+
+	issId := -1
+	assigneeId := -1
+	foundAssign := false
+
+	tokens := strings.Split(msg, " ")
+	for _, token := range tokens {
+		if token == "assign" {
+			foundAssign = true
+			continue
+		}
+		if foundAssign {
+			for _, usr := range usersCollection.Users {
+				if strings.ToUpper(usr.Firstname) == strings.ToUpper(userFirstName) {
+					assigneeId = int(usr.ID)
+					continue
+				}
+			}
+		}
+
+		testId, err := strconv.Atoi(token)
+		if err == nil {
+			issId = testId
+			continue
+		}
+	}
+
+	if issId == -1 {
+		log.Printf("redmineutil.setReadyToTestStatus -   Unable to determine issue ID from \"%s\"", msg)
+		return "I couldn't figure out what the issue ID was, so I had to give up."
+	}
+	if assigneeId == -1 {
+		log.Printf("redmineutil.setReadyToTestStatus -   Unable to determine new assignee ID from \"%s\"", msg)
+		return "I couldn't figure out who to assign the issue to, so I had to give up."
+	}
+
+	log.Printf("redmineutil.setReadyToTestStatus -   Marking Issue #%d as ready to test, and assigning it to user ID %d", issId, assigneeId)
+
+	updUrl := fmt.Sprintf("%s/issues/%d.json", BaseRedmineUrl, issId)
+	rawJson := []byte(fmt.Sprintf(
+		"{ \"issue\": { \"status_id\": \"3\", \"assigned_to_id\": \"%d\", \"notes\": \"Marked Ready to Test by SSI bot on behalf of %s.\" }}",
+		assigneeId, userFirstName))
+
+	req, err := http.NewRequest("PUT", updUrl, bytes.NewBuffer(rawJson))
+	if err != nil {
+		log.Printf("redmineutil.setReadyToTestStatus -   Failed while creating the PUT request: %s", err.Error())
+		return fmt.Sprintf("I failed while creating the PUT request to update the issue: %s", err.Error())
+	}
+
+	req.Header.Add("User-Agent", "SSIbot/0.1")
+	req.Header.Add("X-Redmine-API-Key", key)
+	req.Header.Add("Content-Type", "application/json")
+	req.ContentLength = int64(len(rawJson))
+
+	client := &http.Client{}
+	_, err = client.Do(req)
+	if err != nil {
+		return fmt.Sprintf("I failed while trying to get a response: %s", err.Error())
+	}
+
+	log.Printf("redmineutil.setReadyToTestStatus -   Marked issue %d as ready to test successfully.", issId)
+	return fmt.Sprintf("Alright, I've marked Issue #%d as ready to test.", issId)
+}
+
+func getUsers(key string) {
+	client := &http.Client{}
+
 	req, err := http.NewRequest("GET", "https://vault.softwaresysinc.net/redmine/users.json", nil)
 	if err != nil {
 		et := fmt.Sprintf("redmineutil.GetIssues failed to create a request to get users: %s", err.Error())
@@ -192,7 +264,6 @@ type RedmineUser struct {
 	LastLoginOn string `json:"last_login_on"`
 }
 
-// RedmineIssuesCollection struct containing issues
 type RedmineIssuesCollection struct {
 	Issues     []Issue `json:"issues"`
 	TotalCount int64   `json:"total_count"`
@@ -226,21 +297,21 @@ type RedmineProperty struct {
 }
 
 type CustomField struct {
-	ID    int64  `json:"id"`
-	Name  Name   `json:"name"`
-	Value string `json:"value"`
+	ID    int64           `json:"id"`
+	Name  CustomFieldName `json:"name"`
+	Value string          `json:"value"`
 }
 
-type Name string
+type CustomFieldName string
 
 const (
-	CallerOrContactName Name = "Caller or Contact Name"
-	CustomWork          Name = "Custom Work"
-	Customer            Name = "Customer"
-	DBName              Name = "DB Name"
-	ECLocation          Name = "EC Location"
-	EmpNo               Name = "Emp No"
-	Filename            Name = "Filename"
-	ProgramName         Name = "Program Name"
-	Received            Name = "Received"
+	CallerOrContactName CustomFieldName = "Caller or Contact Name"
+	CustomWork          CustomFieldName = "Custom Work"
+	Customer            CustomFieldName = "Customer"
+	DBName              CustomFieldName = "DB Name"
+	ECLocation          CustomFieldName = "EC Location"
+	EmpNo               CustomFieldName = "Emp No"
+	Filename            CustomFieldName = "Filename"
+	ProgramName         CustomFieldName = "Program Name"
+	Received            CustomFieldName = "Received"
 )

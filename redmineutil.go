@@ -207,6 +207,8 @@ func setReadyToTestStatus(msg string, userFirstName string, key string) string {
 		return fmt.Sprintf("I failed while creating the PUT request to update the issue: %s", err.Error())
 	}
 
+	log.Printf("redmineutil.setReadyToTestStatus -   Writing \"%s\" to %s", string(rawJson), updUrl)
+
 	req.Header.Add("User-Agent", "SSIbot/0.1")
 	req.Header.Add("X-Redmine-API-Key", key)
 	req.Header.Add("Content-Type", "application/json")
@@ -218,7 +220,7 @@ func setReadyToTestStatus(msg string, userFirstName string, key string) string {
 		return fmt.Sprintf("I failed while trying to get a response: %s", err.Error())
 	}
 
-	log.Printf("redmineutil.setReadyToTestStatus -   Marked issue %d as ready to test successfully.", issId)
+	log.Printf("redmineutil.setReadyToTestStatus -   Marked issue %d as ready to test.", issId)
 	return fmt.Sprintf("Alright, I've marked Issue #%d as ready to test.", issId)
 }
 

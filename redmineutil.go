@@ -1,12 +1,14 @@
 package redmineutil
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -35,6 +37,8 @@ func HandleMessage(msg string, userFirstName string, key string) (resp string) {
 		}
 
 		return resp
+	} else if strings.Contains(msg, "close") || strings.Contains(msg, "reject") {
+		return closeIssue(msg, userFirstName, key)
 	}
 
 	return fmt.Sprintf("Hi %s, I didn't understand your instructions", userFirstName)
@@ -93,6 +97,59 @@ func getIssues(key string, user string, limit int) (ret []Issue, retErr error) {
 	log.Printf("redmineutil.GetIssues -   Got %d issue records...", len(issuesCollection.Issues))
 
 	return issuesCollection.Issues, nil
+}
+
+func closeIssue(msg string, userFirstName string, key string) string {
+	log.Printf("redmineutil.closeIssue - Attempting to close an issue")
+
+	issId := -1
+	for _, token := range strings.Split(msg, " ") {
+		testId, err := strconv.Atoi(token)
+		if err == nil {
+			issId = testId
+			break
+		}
+	}
+
+	if issId == -1 {
+		log.Printf("redmineutil.closeIssue - Unable to determine issue ID from \"%s\"", msg)
+		return "I couldn't figure out what the issue ID was, so I had to give up."
+	}
+
+	log.Printf("redmineutil.closeIssue -   Attempting to close Issue #%d", issId)
+
+	// mysql> select * from issue_statuses;
+	// +----+---------------+-----------+----------+--------------------+
+	// | id | name          | is_closed | position | default_done_ratio |
+	// +----+---------------+-----------+----------+--------------------+
+	// |  1 | New           |         0 |        1 |               NULL |
+	// |  2 | Assigned      |         0 |        2 |               NULL |
+	// |  3 | Ready to Test |         0 |        4 |               NULL |
+	// |  5 | Closed        |         1 |        5 |               NULL |
+	// |  6 | Rejected      |         1 |        6 |               NULL |
+	// |  7 | Feedback      |         0 |        3 |               NULL |
+	// +----+---------------+-----------+----------+--------------------+
+
+	delUrl := fmt.Sprintf("%s/issues/%d.json", BASE_REDMINE_URL, issId)
+	rawJson := []byte(fmt.Sprintf("{ \"issue\": { \"status_id\": \"5\", \"notes\": \"Closed by SSI bot on behalf of %s.\" }}", userFirstName))
+
+	req, err := http.NewRequest("PUT", delUrl, bytes.NewBuffer(rawJson))
+	if err != nil {
+		return fmt.Sprintf("I failed while creating the PUT request to update the issue: %s", err.Error())
+	}
+
+	req.Header.Add("User-Agent", "SSIbot/0.1")
+	req.Header.Add("X-Redmine-API-Key", key)
+	req.Header.Add("Content-Type", "application/json")
+	req.ContentLength = int64(len(rawJson))
+
+	client := &http.Client{}
+	_, err = client.Do(req)
+	if err != nil {
+		return fmt.Sprintf("I failed while trying to get a response: %s", err.Error())
+	}
+
+	return fmt.Sprintf("Alright, I've closed Issue #%d.", issId)
 }
 
 func getUsers(client *http.Client, key string) {

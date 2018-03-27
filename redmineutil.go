@@ -171,7 +171,7 @@ func setReadyToTestStatus(msg string, userFirstName string, key string) string {
 		}
 		if foundAssign {
 			for _, usr := range usersCollection.Users {
-				if strings.ToUpper(usr.Firstname) == strings.ToUpper(userFirstName) {
+				if strings.ToUpper(usr.Firstname) == strings.ToUpper(token) {
 					assigneeId = int(usr.ID)
 					continue
 				}
@@ -198,7 +198,7 @@ func setReadyToTestStatus(msg string, userFirstName string, key string) string {
 
 	updUrl := fmt.Sprintf("%s/issues/%d.json", BaseRedmineUrl, issId)
 	rawJson := []byte(fmt.Sprintf(
-		"{ \"issue\": { \"status_id\": \"3\", \"assigned_to_id\": %d, \"notes\": \"Marked Ready to Test by SSI bot on behalf of %s.\" }}",
+		"{ \"issue\": { \"status_id\": \"3\", \"assigned_to_id\": \"%d\", \"notes\": \"Marked Ready to Test by SSI bot on behalf of %s.\" }}",
 		assigneeId, userFirstName))
 
 	req, err := http.NewRequest("PUT", updUrl, bytes.NewBuffer(rawJson))

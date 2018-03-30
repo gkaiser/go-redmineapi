@@ -1,4 +1,4 @@
-package redmineutil
+package redmineapi
 
 import (
 	"bytes"

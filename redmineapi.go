@@ -35,12 +35,12 @@ func Setup(apiKey string, redmineUrl string) {
 	redmineBaseUrl = redmineUrl
 }
 
-// HandleMessage handles a message from the SSI bot
+// HandleMessage handles a message from the SSIbot
 func HandleMessage(msg string, userFirstName string) (resp string) {
 	if len(usersCollection.Users) == 0 {
-		log.Printf("redmineutil.GetIssues -   Getting users first...")
+		log.Printf("GetIssues -   Getting users first...")
 		getUsers()
-		log.Printf("redmineutil.GetIssues -   Got %d user records...", len(usersCollection.Users))
+		log.Printf("GetIssues -   Got %d user records...", len(usersCollection.Users))
 	}
 
 	if strings.Contains(msg, "get") || strings.Contains(msg, "show") {
@@ -92,11 +92,9 @@ func getIssues(user string) (ret []RedmineIssue, retErr error) {
 	minDate := url.QueryEscape(">=" + time.Now().AddDate(-2, 0, 0).Format("2006-01-02"))
 	issuesUrl := fmt.Sprintf("%s/issues.json?assigned_to_id=%d&created_on=%s", redmineBaseUrl, userId, minDate)
 
-	log.Printf("redmineutil.GetIssues -    Redmine URL: %s", issuesUrl)
-
 	req, err := http.NewRequest("GET", issuesUrl, nil)
 	if err != nil {
-		et := fmt.Sprintf("redmineutil.GetIssues failed to create a request to get issues: %s", err.Error())
+		et := fmt.Sprintf("GetIssues failed to create a request to get issues: %s", err.Error())
 		log.Printf(et)
 		return nil, errors.New(et)
 	}
@@ -106,7 +104,7 @@ func getIssues(user string) (ret []RedmineIssue, retErr error) {
 
 	resp, err := client.Do(req)
 	if err != nil {
-		et := fmt.Sprintf("redmineutil.GetIssues failed to get issues response: %s", err.Error())
+		et := fmt.Sprintf("GetIssues failed to get issues response: %s", err.Error())
 		log.Printf(et)
 		return nil, errors.New(et)
 	}
@@ -114,13 +112,13 @@ func getIssues(user string) (ret []RedmineIssue, retErr error) {
 	var issuesCollection RedmineIssuesCollection
 	json.NewDecoder(resp.Body).Decode(&issuesCollection)
 
-	log.Printf("redmineutil.GetIssues -   Got %d issue records...", len(issuesCollection.Issues))
+	log.Printf("GetIssues -   Got %d issue records...", len(issuesCollection.Issues))
 
 	return issuesCollection.Issues, nil
 }
 
 func closeIssue(msg string, userFirstName string) string {
-	log.Printf("redmineutil.closeIssue - Attempting to close an issue")
+	log.Printf("closeIssue - Attempting to close an issue")
 
 	issId := -1
 	for _, token := range strings.Split(msg, " ") {
@@ -132,22 +130,22 @@ func closeIssue(msg string, userFirstName string) string {
 	}
 
 	if issId == -1 {
-		log.Printf("redmineutil.closeIssue - Unable to determine issue ID from \"%s\"", msg)
+		log.Printf("closeIssue - Unable to determine issue ID from \"%s\"", msg)
 		return "I couldn't figure out what the issue ID was, so I had to give up."
 	}
 
-	log.Printf("redmineutil.closeIssue -   Issue #%d is to be closed", issId)
+	log.Printf("closeIssue -   Issue #%d is to be closed", issId)
 
 	delUrl := fmt.Sprintf("%s/issues/%d.json", redmineBaseUrl, issId)
-	rawJson := []byte(fmt.Sprintf("{ \"issue\": { \"status_id\": \"5\", \"notes\": \"Closed by SSI bot on behalf of %s.\" }}", userFirstName))
+	rawJson := []byte(fmt.Sprintf("{ \"issue\": { \"status_id\": \"5\", \"notes\": \"Closed by SSIbot on behalf of %s.\" }}", userFirstName))
 
 	req, err := http.NewRequest("PUT", delUrl, bytes.NewBuffer(rawJson))
 	if err != nil {
-		log.Printf("redmineutil.closeIssue -   Failed while creating the PUT request: %s", err.Error())
+		log.Printf("closeIssue -   Failed while creating the PUT request: %s", err.Error())
 		return fmt.Sprintf("I failed while creating the PUT request to update the issue: %s", err.Error())
 	}
 
-	req.Header.Add("User-Agent", "SSIbot/0.1")
+	req.Header.Add("User-Agent", "go-redmineapi/0.1")
 	req.Header.Add("X-Redmine-API-Key", redmineApiKey)
 	req.Header.Add("Content-Type", "application/json")
 	req.ContentLength = int64(len(rawJson))
@@ -158,12 +156,12 @@ func closeIssue(msg string, userFirstName string) string {
 		return fmt.Sprintf("I failed while trying to get a response: %s", err.Error())
 	}
 
-	log.Printf("redmineutil.closeIssue -   Closed issue %d successfully.", issId)
+	log.Printf("closeIssue -   Closed issue %d successfully.", issId)
 	return fmt.Sprintf("Alright, I've closed Issue #%d.", issId)
 }
 
 func setReadyToTestStatus(msg string, userFirstName string) string {
-	log.Printf("redmineutil.setReadyToTestStatus - Attempting to mark an issue as ready to test")
+	log.Printf("setReadyToTestStatus - Attempting to mark an issue as ready to test")
 
 	issId := -1
 	assigneeId := -1
@@ -177,7 +175,7 @@ func setReadyToTestStatus(msg string, userFirstName string) string {
 		}
 		if foundAssign {
 			for _, usr := range usersCollection.Users {
-				if strings.ToUpper(usr.Firstname) == strings.ToUpper(token) {
+				if strings.ToUpper(usr.Firstname) == strings.ToUpper(token) || strings.ToUpper(usr.Lastname) == strings.ToUpper(token) {
 					assigneeId = int(usr.ID)
 					continue
 				}
@@ -187,35 +185,32 @@ func setReadyToTestStatus(msg string, userFirstName string) string {
 		testId, err := strconv.Atoi(token)
 		if err == nil {
 			issId = testId
-			continue
 		}
 	}
 
 	if issId == -1 {
-		log.Printf("redmineutil.setReadyToTestStatus -   Unable to determine issue ID from \"%s\"", msg)
+		log.Printf("setReadyToTestStatus -   Unable to determine issue ID from \"%s\"", msg)
 		return "I couldn't figure out what the issue ID was, so I had to give up."
 	}
 	if assigneeId == -1 {
-		log.Printf("redmineutil.setReadyToTestStatus -   Unable to determine new assignee ID from \"%s\"", msg)
+		log.Printf("setReadyToTestStatus -   Unable to determine new assignee ID from \"%s\"", msg)
 		return "I couldn't figure out who to assign the issue to, so I had to give up."
 	}
 
-	log.Printf("redmineutil.setReadyToTestStatus -   Marking Issue #%d as ready to test, and assigning it to user ID %d", issId, assigneeId)
+	log.Printf("setReadyToTestStatus -   Marking Issue #%d as ready to test, and assigning it to user ID %d", issId, assigneeId)
 
 	updUrl := fmt.Sprintf("%s/issues/%d.json", redmineBaseUrl, issId)
 	rawJson := []byte(fmt.Sprintf(
-		"{ \"issue\": { \"status_id\": \"3\", \"assigned_to_id\": \"%d\", \"notes\": \"Marked Ready to Test by SSI bot on behalf of %s.\" }}",
+		"{ \"issue\": { \"status_id\": \"3\", \"assigned_to_id\": \"%d\", \"notes\": \"Marked Ready to Test by SSIbot on behalf of %s.\" }}",
 		assigneeId, userFirstName))
 
 	req, err := http.NewRequest("PUT", updUrl, bytes.NewBuffer(rawJson))
 	if err != nil {
-		log.Printf("redmineutil.setReadyToTestStatus -   Failed while creating the PUT request: %s", err.Error())
+		log.Printf("setReadyToTestStatus -   Failed while creating the PUT request: %s", err.Error())
 		return fmt.Sprintf("I failed while creating the PUT request to update the issue: %s", err.Error())
 	}
 
-	log.Printf("redmineutil.setReadyToTestStatus -   Writing \"%s\" to %s", string(rawJson), updUrl)
-
-	req.Header.Add("User-Agent", "SSIbot/0.1")
+	req.Header.Add("User-Agent", "go-redmineapi/0.1")
 	req.Header.Add("X-Redmine-API-Key", redmineApiKey)
 	req.Header.Add("Content-Type", "application/json")
 	req.ContentLength = int64(len(rawJson))
@@ -226,7 +221,7 @@ func setReadyToTestStatus(msg string, userFirstName string) string {
 		return fmt.Sprintf("I failed while trying to get a response: %s", err.Error())
 	}
 
-	log.Printf("redmineutil.setReadyToTestStatus -   Marked issue %d as ready to test.", issId)
+	log.Printf("setReadyToTestStatus -   Marked issue %d as ready to test.", issId)
 	return fmt.Sprintf("Alright, I've marked Issue #%d as ready to test.", issId)
 }
 
@@ -235,18 +230,18 @@ func getUsers() {
 
 	req, err := http.NewRequest("GET", fmt.Sprintf("%s/users.json", redmineBaseUrl), nil)
 	if err != nil {
-		et := fmt.Sprintf("redmineutil.GetIssues failed to create a request to get users: %s", err.Error())
+		et := fmt.Sprintf("GetIssues failed to create a request to get users: %s", err.Error())
 		log.Printf(et)
 		//return nil, errors.New(et)
 		return
 	}
 
-	req.Header.Add("User-Agent", "SSIbot/0.1")
+	req.Header.Add("User-Agent", "go-redmineapi/0.1")
 	req.Header.Add("X-Redmine-API-Key", redmineApiKey)
 
 	resp, err := client.Do(req)
 	if err != nil {
-		et := fmt.Sprintf("redmineutil.GetIssues failed to get users response: %s", err.Error())
+		et := fmt.Sprintf("GetIssues failed to get users response: %s", err.Error())
 		log.Printf(et)
 		//return nil, errors.New(et)
 		return

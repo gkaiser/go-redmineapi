@@ -38,9 +38,10 @@ func Setup(apiKey string, redmineUrl string) {
 // HandleMessage handles a message from the SSIbot
 func HandleMessage(msg string, userFirstName string) (resp string) {
 	if len(usersCollection.Users) == 0 {
-		log.Printf("GetIssues -   Getting users first...")
-		getUsers()
-		log.Printf("GetIssues -   Got %d user records...", len(usersCollection.Users))
+		err := getUsers()
+		if err != nil || usersCollection.TotalCount == 0 {
+			return "Unable to get users from Redmine."
+		}
 	}
 
 	if strings.Contains(msg, "get") || strings.Contains(msg, "show") {
@@ -157,7 +158,11 @@ func closeIssue(msg string, userFirstName string) string {
 	}
 
 	log.Printf("closeIssue -   Closed issue %d successfully.", issId)
-	return fmt.Sprintf("Alright, I've closed Issue #%d.", issId)
+	return fmt.Sprintf(
+		"Alright, I've closed <%s/issues/%d|Issue #%d>.",
+		redmineBaseUrl,
+		issId,
+		issId)
 }
 
 func setReadyToTestStatus(msg string, userFirstName string) string {
@@ -222,18 +227,21 @@ func setReadyToTestStatus(msg string, userFirstName string) string {
 	}
 
 	log.Printf("setReadyToTestStatus -   Marked issue %d as ready to test.", issId)
-	return fmt.Sprintf("Alright, I've marked Issue #%d as ready to test.", issId)
+	return fmt.Sprintf(
+		"Alright, I've marked <%s/issues/%d|Issue #%d> as ready to test.",
+		redmineBaseUrl,
+		issId,
+		issId)
 }
 
-func getUsers() {
+func getUsers() error {
 	client := &http.Client{}
 
 	req, err := http.NewRequest("GET", fmt.Sprintf("%s/users.json", redmineBaseUrl), nil)
 	if err != nil {
-		et := fmt.Sprintf("GetIssues failed to create a request to get users: %s", err.Error())
+		et := fmt.Sprintf("getUsers failed to create request: %s", err.Error())
 		log.Printf(et)
-		//return nil, errors.New(et)
-		return
+		return errors.New(et)
 	}
 
 	req.Header.Add("User-Agent", "go-redmineapi/0.1")
@@ -241,15 +249,17 @@ func getUsers() {
 
 	resp, err := client.Do(req)
 	if err != nil {
-		et := fmt.Sprintf("GetIssues failed to get users response: %s", err.Error())
+		et := fmt.Sprintf("getUsers failed to get response: %s", err.Error())
 		log.Printf(et)
-		//return nil, errors.New(et)
-		return
+		return errors.New(et)
 	}
 
 	json.NewDecoder(resp.Body).Decode(&usersCollection)
+
+	return nil
 }
 
+// RedmineUsersCollection represents a collection of RedmineUser objects
 type RedmineUsersCollection struct {
 	Users      []RedmineUser `json:"users"`
 	TotalCount int64         `json:"total_count"`
@@ -257,6 +267,7 @@ type RedmineUsersCollection struct {
 	Limit      int64         `json:"limit"`
 }
 
+// RedmineUser represents a user in the Redmine system
 type RedmineUser struct {
 	ID          int64  `json:"id"`
 	Login       string `json:"login"`
@@ -267,6 +278,7 @@ type RedmineUser struct {
 	LastLoginOn string `json:"last_login_on"`
 }
 
+// RedmineIssuesCollection represents a collection of RedmineIssue objects
 type RedmineIssuesCollection struct {
 	Issues     []RedmineIssue `json:"issues"`
 	TotalCount int64          `json:"total_count"`
@@ -274,6 +286,7 @@ type RedmineIssuesCollection struct {
 	Limit      int64          `json:"limit"`
 }
 
+// RedmineIssue represents an issue in the Redmine system
 type RedmineIssue struct {
 	ID           int64                `json:"id"`
 	Project      RedmineProperty      `json:"project"`
@@ -294,17 +307,20 @@ type RedmineIssue struct {
 	DueDate      string               `json:"due_date"`
 }
 
+// RedmineProperty represents a property field in Redmine data
 type RedmineProperty struct {
 	ID   int64  `json:"id"`
 	Name string `json:"name"`
 }
 
+// RedmineCustomField represents a custom field in Redmine
 type RedmineCustomField struct {
 	ID    int64                  `json:"id"`
 	Name  RedmineCustomFieldName `json:"name"`
 	Value string                 `json:"value"`
 }
 
+// RedmineCustomFieldName represents a custom field's name
 type RedmineCustomFieldName string
 
 const (

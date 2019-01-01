@@ -29,9 +29,10 @@ var redmineApiKey string
 var redmineBaseUrl string
 var usersCollection RedmineUsersCollection
 
+// RedmineApiClient API client object
 type RedmineApiClient struct{}
 
-// Setup takes a couple needed settings, so they don't need to be passed repeatedly.
+// InitializeNewClient takes a couple needed settings, so they don't need to be passed repeatedly.
 func InitializeNewClient(apiKey string, redmineUrl string) (rc *RedmineApiClient) {
 	redmineApiKey = apiKey
 	redmineBaseUrl = redmineUrl
@@ -41,6 +42,10 @@ func InitializeNewClient(apiKey string, redmineUrl string) (rc *RedmineApiClient
 
 // HandleMessage handles a message from the SSIbot
 func (rc RedmineApiClient) HandleMessage(msg string, userFirstName string) (resp string) {
+	if redmineApiKey == "" || redmineBaseUrl == "" {
+		return "RedmineApiClient has not been initialized."
+	}
+
 	if len(usersCollection.Users) == 0 {
 		err := getUsers()
 		if err != nil || usersCollection.TotalCount == 0 {

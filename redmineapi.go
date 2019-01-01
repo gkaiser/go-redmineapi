@@ -29,14 +29,16 @@ var redmineApiKey string
 var redmineBaseUrl string
 var usersCollection RedmineUsersCollection
 
+type RedmineApiClient struct{}
+
 // Setup takes a couple needed settings, so they don't need to be passed repeatedly.
-func Setup(apiKey string, redmineUrl string) {
+func (rc RedmineApiClient) Setup(apiKey string, redmineUrl string) {
 	redmineApiKey = apiKey
 	redmineBaseUrl = redmineUrl
 }
 
 // HandleMessage handles a message from the SSIbot
-func HandleMessage(msg string, userFirstName string) (resp string) {
+func (rc RedmineApiClient) HandleMessage(msg string, userFirstName string) (resp string) {
 	if len(usersCollection.Users) == 0 {
 		err := getUsers()
 		if err != nil || usersCollection.TotalCount == 0 {

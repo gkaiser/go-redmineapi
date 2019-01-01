@@ -32,9 +32,11 @@ var usersCollection RedmineUsersCollection
 type RedmineApiClient struct{}
 
 // Setup takes a couple needed settings, so they don't need to be passed repeatedly.
-func (rc RedmineApiClient) Setup(apiKey string, redmineUrl string) {
+func InitializeNewClient(apiKey string, redmineUrl string) (rc *RedmineApiClient) {
 	redmineApiKey = apiKey
 	redmineBaseUrl = redmineUrl
+
+	return &RedmineApiClient{}
 }
 
 // HandleMessage handles a message from the SSIbot

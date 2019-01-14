@@ -25,24 +25,24 @@ import (
 // |  7 | Feedback      |         0 |        3 |               NULL |
 // +----+---------------+-----------+----------+--------------------+
 
-var redmineApiKey string
-var redmineBaseUrl string
+var redmineAPIKey string
+var redmineBaseURL string
 var usersCollection RedmineUsersCollection
 
-// RedmineApiClient API client object
-type RedmineApiClient struct{}
+// Client API client object
+type Client struct{}
 
 // InitializeNewClient takes a couple needed settings, so they don't need to be passed repeatedly.
-func InitializeNewClient(apiKey string, redmineUrl string) (rc *RedmineApiClient) {
-	redmineApiKey = apiKey
-	redmineBaseUrl = redmineUrl
+func InitializeNewClient(apiKey string, redmineURL string) (rc *Client) {
+	redmineAPIKey = apiKey
+	redmineBaseURL = redmineURL
 
-	return &RedmineApiClient{}
+	return &Client{}
 }
 
 // HandleMessage handles a message from the SSIbot
-func (rc RedmineApiClient) HandleMessage(msg string, userFirstName string) (resp string) {
-	if redmineApiKey == "" || redmineBaseUrl == "" {
+func (rc Client) HandleMessage(msg string, userFirstName string) (resp string) {
+	if redmineAPIKey == "" || redmineBaseURL == "" {
 		return "RedmineApiClient has not been initialized."
 	}
 
@@ -64,7 +64,7 @@ func (rc RedmineApiClient) HandleMessage(msg string, userFirstName string) (resp
 			resp += fmt.Sprintf(
 				"%s <%s/issues/%d|Issue #%d> - %s\n",
 				issue.Project.Name,
-				redmineBaseUrl,
+				redmineBaseURL,
 				issue.ID,
 				issue.ID,
 				issue.Subject)
@@ -72,9 +72,9 @@ func (rc RedmineApiClient) HandleMessage(msg string, userFirstName string) (resp
 
 		return resp
 	} else if strings.Contains(msg, "close") || strings.Contains(msg, "reject") {
-		return closeIssue(msg, userFirstName)
+		return setIssueClosed(msg, userFirstName)
 	} else if strings.Contains(msg, "ready to test") {
-		return setReadyToTestStatus(msg, userFirstName)
+		return setIssueReadyToTest(msg, userFirstName)
 	}
 
 	return fmt.Sprintf("Hi %s, I didn't understand your instructions", userFirstName)
@@ -85,24 +85,24 @@ func getIssues(user string) (ret []RedmineIssue, retErr error) {
 	client := &http.Client{}
 
 	// find the ID for the user we're getting issues for
-	userId := int64(-1)
+	userID := int64(-1)
 	for _, usr := range usersCollection.Users {
 		if usr.Firstname == user || usr.Lastname == user {
-			userId = usr.ID
+			userID = usr.ID
 			break
 		}
 	}
 
-	if userId == -1 {
+	if userID == -1 {
 		et := fmt.Sprintf("getIssues -   Couldn't find a user record for \"%s\".", user)
 		log.Printf(et)
 		return nil, errors.New(et)
 	}
 
 	minDate := url.QueryEscape(">=" + time.Now().AddDate(-2, 0, 0).Format("2006-01-02"))
-	issuesUrl := fmt.Sprintf("%s/issues.json?assigned_to_id=%d&created_on=%s", redmineBaseUrl, userId, minDate)
+	issuesURL := fmt.Sprintf("%s/issues.json?assigned_to_id=%d&created_on=%s", redmineBaseURL, userID, minDate)
 
-	req, err := http.NewRequest("GET", issuesUrl, nil)
+	req, err := http.NewRequest("GET", issuesURL, nil)
 	if err != nil {
 		et := fmt.Sprintf("GetIssues failed to create a request to get issues: %s", err.Error())
 		log.Printf(et)
@@ -110,7 +110,7 @@ func getIssues(user string) (ret []RedmineIssue, retErr error) {
 	}
 
 	req.Header.Add("User-Agent", "go-redmineapi/0.1")
-	req.Header.Add("X-Redmine-API-Key", redmineApiKey)
+	req.Header.Add("X-Redmine-API-Key", redmineAPIKey)
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -127,58 +127,60 @@ func getIssues(user string) (ret []RedmineIssue, retErr error) {
 	return issuesCollection.Issues, nil
 }
 
-func closeIssue(msg string, userFirstName string) string {
-	log.Printf("closeIssue - Attempting to close an issue")
+func setIssueClosed(msg string, userFirstName string) string {
+	log.Printf("setIssueClosed - Attempting to close an issue...")
 
-	issId := -1
+	issID := -1
 	for _, token := range strings.Split(msg, " ") {
-		testId, err := strconv.Atoi(token)
+		testID, err := strconv.Atoi(token)
 		if err == nil {
-			issId = testId
+			issID = testID
 			break
 		}
 	}
 
-	if issId == -1 {
-		log.Printf("closeIssue - Unable to determine issue ID from \"%s\"", msg)
-		return "I couldn't figure out what the issue ID was, so I had to give up."
+	if issID == -1 {
+		log.Printf("setIssueClosed -   Unable to determine issue ID from \"%s\"", msg)
+		return fmt.Sprintf("I couldn't close an issue from \"%s\", because I couldn't figure out what the issue ID was.", msg)
 	}
 
-	log.Printf("closeIssue -   Issue #%d is to be closed", issId)
+	log.Printf("setIssueClosed -   Issue with ID #%d is to be set to closed.", issID)
 
-	delUrl := fmt.Sprintf("%s/issues/%d.json", redmineBaseUrl, issId)
-	rawJson := []byte(fmt.Sprintf("{ \"issue\": { \"status_id\": \"5\", \"notes\": \"Closed by SSIbot on behalf of %s.\" }}", userFirstName))
+	delURL := fmt.Sprintf("%s/issues/%d.json", redmineBaseURL, issID)
+	rawJSON := []byte(fmt.Sprintf("{ \"issue\": { \"status_id\": \"5\", \"notes\": \"Closed by SSIbot on behalf of %s.\" }}", userFirstName))
 
-	req, err := http.NewRequest("PUT", delUrl, bytes.NewBuffer(rawJson))
+	req, err := http.NewRequest("PUT", delURL, bytes.NewBuffer(rawJSON))
 	if err != nil {
-		log.Printf("closeIssue -   Failed while creating the PUT request: %s", err.Error())
-		return fmt.Sprintf("I failed while creating the PUT request to update the issue: %s", err.Error())
+		log.Printf("setIssueClosed -   Failed creating the PUT request: %s", err.Error())
+		return fmt.Sprintf("I couldn't close an issue, becuse something went wrong ")
 	}
 
-	req.Header.Add("User-Agent", "go-redmineapi/0.1")
-	req.Header.Add("X-Redmine-API-Key", redmineApiKey)
+	req.Header.Add("User-Agent", "sb-go-redmineapi/0.1")
+	req.Header.Add("X-Redmine-API-Key", redmineAPIKey)
 	req.Header.Add("Content-Type", "application/json")
-	req.ContentLength = int64(len(rawJson))
+	req.ContentLength = int64(len(rawJSON))
 
 	client := &http.Client{}
 	_, err = client.Do(req)
 	if err != nil {
-		return fmt.Sprintf("I failed while trying to get a response: %s", err.Error())
+		log.Printf("setIssueClosed -   Failed while trying to get a response for the PUT request: %s", err.Error())
+		return fmt.Sprintf("I didn't get a response from Redmine when closing issue #%d, %s", issID, err.Error())
 	}
 
-	log.Printf("closeIssue -   Closed issue %d successfully.", issId)
+	log.Printf("setIssueClosed -   Successfully set issue #%d to closed.", issID)
+
 	return fmt.Sprintf(
-		"Alright, I've closed <%s/issues/%d|Issue #%d>.",
-		redmineBaseUrl,
-		issId,
-		issId)
+		"Alrighty, I've closed <%s/issues/%d|Issue #%d>.",
+		redmineBaseURL,
+		issID,
+		issID)
 }
 
-func setReadyToTestStatus(msg string, userFirstName string) string {
-	log.Printf("setReadyToTestStatus - Attempting to mark an issue as ready to test")
+func setIssueReadyToTest(msg string, userFirstName string) string {
+	log.Printf("setIssueReadyToTest - Attempting to mark an issue as ready to test")
 
-	issId := -1
-	assigneeId := -1
+	issID := -1
+	assigneeID := -1
 	foundAssign := false
 
 	tokens := strings.Split(msg, " ")
@@ -190,44 +192,44 @@ func setReadyToTestStatus(msg string, userFirstName string) string {
 		if foundAssign {
 			for _, usr := range usersCollection.Users {
 				if strings.ToUpper(usr.Firstname) == strings.ToUpper(token) || strings.ToUpper(usr.Lastname) == strings.ToUpper(token) {
-					assigneeId = int(usr.ID)
+					assigneeID = int(usr.ID)
 					continue
 				}
 			}
 		}
 
-		testId, err := strconv.Atoi(token)
+		testID, err := strconv.Atoi(token)
 		if err == nil {
-			issId = testId
+			issID = testID
 		}
 	}
 
-	if issId == -1 {
-		log.Printf("setReadyToTestStatus -   Unable to determine issue ID from \"%s\"", msg)
+	if issID == -1 {
+		log.Printf("setIssueReadyToTest -   Unable to determine issue ID from \"%s\"", msg)
 		return "I couldn't figure out what the issue ID was, so I had to give up."
 	}
-	if assigneeId == -1 {
-		log.Printf("setReadyToTestStatus -   Unable to determine new assignee ID from \"%s\"", msg)
+	if assigneeID == -1 {
+		log.Printf("setIssueReadyToTest -   Unable to determine new assignee ID from \"%s\"", msg)
 		return "I couldn't figure out who to assign the issue to, so I had to give up."
 	}
 
-	log.Printf("setReadyToTestStatus -   Marking Issue #%d as ready to test, and assigning it to user ID %d", issId, assigneeId)
+	log.Printf("setIssueReadyToTest -   Marking Issue #%d as ready to test, and assigning it to user ID %d", issID, assigneeID)
 
-	updUrl := fmt.Sprintf("%s/issues/%d.json", redmineBaseUrl, issId)
-	rawJson := []byte(fmt.Sprintf(
+	updURL := fmt.Sprintf("%s/issues/%d.json", redmineBaseURL, issID)
+	rawJSON := []byte(fmt.Sprintf(
 		"{ \"issue\": { \"status_id\": \"3\", \"assigned_to_id\": \"%d\", \"notes\": \"Marked Ready to Test by SSIbot on behalf of %s.\" }}",
-		assigneeId, userFirstName))
+		assigneeID, userFirstName))
 
-	req, err := http.NewRequest("PUT", updUrl, bytes.NewBuffer(rawJson))
+	req, err := http.NewRequest("PUT", updURL, bytes.NewBuffer(rawJSON))
 	if err != nil {
-		log.Printf("setReadyToTestStatus -   Failed while creating the PUT request: %s", err.Error())
+		log.Printf("setIssueReadyToTest -   Failed while creating the PUT request: %s", err.Error())
 		return fmt.Sprintf("I failed while creating the PUT request to update the issue: %s", err.Error())
 	}
 
 	req.Header.Add("User-Agent", "go-redmineapi/0.1")
-	req.Header.Add("X-Redmine-API-Key", redmineApiKey)
+	req.Header.Add("X-Redmine-API-Key", redmineAPIKey)
 	req.Header.Add("Content-Type", "application/json")
-	req.ContentLength = int64(len(rawJson))
+	req.ContentLength = int64(len(rawJSON))
 
 	client := &http.Client{}
 	_, err = client.Do(req)
@@ -235,30 +237,32 @@ func setReadyToTestStatus(msg string, userFirstName string) string {
 		return fmt.Sprintf("I failed while trying to get a response: %s", err.Error())
 	}
 
-	log.Printf("setReadyToTestStatus -   Marked issue %d as ready to test.", issId)
+	log.Printf("setIssueReadyToTest -   Marked issue %d as ready to test.", issID)
 	return fmt.Sprintf(
 		"Alright, I've marked <%s/issues/%d|Issue #%d> as ready to test.",
-		redmineBaseUrl,
-		issId,
-		issId)
+		redmineBaseURL,
+		issID,
+		issID)
 }
 
 func getUsers() error {
+	log.Printf("getUsers - Attempting to close an issue")
+
 	client := &http.Client{}
 
-	req, err := http.NewRequest("GET", fmt.Sprintf("%s/users.json", redmineBaseUrl), nil)
+	req, err := http.NewRequest("GET", fmt.Sprintf("%s/users.json", redmineBaseURL), nil)
 	if err != nil {
-		et := fmt.Sprintf("getUsers failed to create request: %s", err.Error())
+		et := fmt.Sprintf("getUsers -   failed to create request: %s", err.Error())
 		log.Printf(et)
 		return errors.New(et)
 	}
 
 	req.Header.Add("User-Agent", "go-redmineapi/0.1")
-	req.Header.Add("X-Redmine-API-Key", redmineApiKey)
+	req.Header.Add("X-Redmine-API-Key", redmineAPIKey)
 
 	resp, err := client.Do(req)
 	if err != nil {
-		et := fmt.Sprintf("getUsers failed to get response: %s", err.Error())
+		et := fmt.Sprintf("getUsers -   failed to get response: %s", err.Error())
 		log.Printf(et)
 		return errors.New(et)
 	}
@@ -333,13 +337,22 @@ type RedmineCustomField struct {
 type RedmineCustomFieldName string
 
 const (
+	// CallerOrContactName The caller's or contact's name.
 	CallerOrContactName RedmineCustomFieldName = "Caller or Contact Name"
-	CustomWork          RedmineCustomFieldName = "Custom Work"
-	Customer            RedmineCustomFieldName = "Customer"
-	DBName              RedmineCustomFieldName = "DB Name"
-	ECLocation          RedmineCustomFieldName = "EC Location"
-	EmpNo               RedmineCustomFieldName = "Emp No"
-	Filename            RedmineCustomFieldName = "Filename"
-	ProgramName         RedmineCustomFieldName = "Program Name"
-	Received            RedmineCustomFieldName = "Received"
+	// CustomWork Flag indicating whether this is regarding custom work for the client.
+	CustomWork RedmineCustomFieldName = "Custom Work"
+	// Customer SSI Customer name.
+	Customer RedmineCustomFieldName = "Customer"
+	// DBName The DB name associated with this issue (usually SSI internal).
+	DBName RedmineCustomFieldName = "DB Name"
+	// ECLocation The name of the extra-curricular location associated with this issue.
+	ECLocation RedmineCustomFieldName = "EC Location"
+	// EmpNo The employee number associated with this issue.
+	EmpNo RedmineCustomFieldName = "Emp No"
+	// Filename The attachment filename associated with this issue.
+	Filename RedmineCustomFieldName = "Filename"
+	// ProgramName The name of the Progress procedure associated with this issue.
+	ProgramName RedmineCustomFieldName = "Program Name"
+	// Received The way in which this issue was reported.
+	Received RedmineCustomFieldName = "Received"
 )
